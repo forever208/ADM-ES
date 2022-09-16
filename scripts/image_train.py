@@ -28,7 +28,7 @@ def main():
         **args_to_dict(args, model_and_diffusion_defaults().keys())
     )
     model.to(dist_util.dev())
-    logger.log(summary(model, input_size=(3, 64, 64)))
+    # logger.log(summary(model, input_size=(3, 32, 32)))
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
     logger.log(f"creating data loader from {args.data_dir}...")
 
@@ -71,7 +71,7 @@ def create_argparser():
         microbatch=-1,  # -1 disables microbatches
         ema_rate="0.9999",  # comma-separated list of EMA values
         log_interval=100,
-        save_interval=50000,
+        save_interval=20000,
         resume_checkpoint="",
         use_fp16=False,
         fp16_scale_growth=1e-3,

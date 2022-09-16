@@ -41,12 +41,12 @@ def main():
     # than after the next print(), to help prevent confusion.
     evaluator.warmup()
 
-    print("computing reference batch activations...")
+    print(f"computing reference batch activations {args.ref_batch}...")
     ref_acts = evaluator.read_activations(args.ref_batch)
     print("computing/reading reference batch statistics...")
     ref_stats, ref_stats_spatial = evaluator.read_statistics(args.ref_batch, ref_acts)
 
-    print("computing sample batch activations...")
+    print(f"computing sample batch activations {args.sample_batch}...")
     sample_acts = evaluator.read_activations(args.sample_batch)
     print("computing/reading sample batch statistics...")
     sample_stats, sample_stats_spatial = evaluator.read_statistics(args.sample_batch, sample_acts)
@@ -58,6 +58,13 @@ def main():
     prec, recall = evaluator.compute_prec_recall(ref_acts[0], sample_acts[0])
     print("Precision:", prec)
     print("Recall:", recall)
+
+    filename = args.sample_batch.split('/')
+    path = filename[0] + '/' + filename[1] + '/' + 'log.txt'
+    with open(path, 'r') as file:
+        lines = file.readlines()
+    print(lines[4])
+    print(lines[5])
 
 
 class InvalidFIDException(Exception):

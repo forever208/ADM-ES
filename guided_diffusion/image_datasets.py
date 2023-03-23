@@ -43,9 +43,9 @@ def load_data(*, data_dir, batch_size, image_size, class_cond=False,
     dataset = ImageDataset(image_size, all_files, classes=classes, shard=MPI.COMM_WORLD.Get_rank(),
                            num_shards=MPI.COMM_WORLD.Get_size(), random_crop=random_crop, random_flip=random_flip)
     if deterministic:
-        loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=1, drop_last=True,pin_memory=True)
+        loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=8, drop_last=True,pin_memory=True)
     else:
-        loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=1, drop_last=True, pin_memory=True)
+        loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=8, drop_last=True, pin_memory=True)
     while True:
         yield from loader
 

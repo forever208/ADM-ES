@@ -59,6 +59,13 @@ def main():
     print("Precision:", prec)
     print("Recall:", recall)
 
+    filename = args.sample_batch.split('/')
+    path = filename[0] + '/' + filename[1] + '/' + 'log.txt'
+    with open(path, 'r') as file:
+        lines = file.readlines()
+    print(lines[4])
+    print(lines[5])
+
 
 class InvalidFIDException(Exception):
     pass

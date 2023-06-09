@@ -453,6 +453,8 @@ class GaussianDiffusion:
         model_kwargs=None,
         device=None,
         progress=False,
+        x_T=None,
+        forward_t=None,
     ):
         """
         Generate samples from the model.
@@ -484,6 +486,8 @@ class GaussianDiffusion:
             model_kwargs=model_kwargs,
             device=device,
             progress=progress,
+            x_T=x_T,
+            forward_t=forward_t,
         ):
             final = sample
         return final["sample"]
@@ -499,6 +503,8 @@ class GaussianDiffusion:
         model_kwargs=None,
         device=None,
         progress=False,
+        x_T = None,
+        forward_t=None,
     ):
         """
         Generate samples from the model and yield intermediate samples from
@@ -514,8 +520,11 @@ class GaussianDiffusion:
         if noise is not None:
             img = noise
         else:
-            img = th.randn(*shape, device=device)
-        indices = list(range(self.num_timesteps))[::-1]
+            # img = th.randn(*shape, device=device)
+            img = x_T
+            logger.log(f"ddpm: starting from x_{forward_t}")
+
+        indices = list(range(forward_t))[::-1]
 
         if progress:
             # Lazy import so that we don't depend on tqdm.
@@ -638,6 +647,8 @@ class GaussianDiffusion:
         device=None,
         progress=False,
         eta=0.0,
+        x_T=None,
+        forward_t=None,
     ):
         """
         Generate samples from the model using DDIM.
@@ -656,6 +667,8 @@ class GaussianDiffusion:
             device=device,
             progress=progress,
             eta=eta,
+            x_T=x_T,
+            forward_t=forward_t,
         ):
             final = sample
         return final["sample"]
@@ -672,6 +685,8 @@ class GaussianDiffusion:
         device=None,
         progress=False,
         eta=0.0,
+        x_T=None,
+        forward_t=None,
     ):
         """
         Use DDIM to sample from the model and yield intermediate samples from
@@ -685,8 +700,10 @@ class GaussianDiffusion:
         if noise is not None:
             img = noise
         else:
-            img = th.randn(*shape, device=device)
-        indices = list(range(self.num_timesteps))[::-1]
+            # img = th.randn(*shape, device=device)
+            img = x_T
+            logger.log(f"ddim: starting from x_{forward_t}")
+        indices = list(range(forward_t))[::-1]
 
         if progress:
             # Lazy import so that we don't depend on tqdm.

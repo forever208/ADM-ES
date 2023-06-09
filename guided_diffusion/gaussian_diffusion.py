@@ -171,6 +171,11 @@ class GaussianDiffusion:
         )
         self.input_pertub = input_pertub
         logger.log(f"input perturbation is: {self.input_pertub}")
+        self.x_t_stochas_part = {}
+        start = 1.011 - self.input_pertub * ((self.num_timesteps - 1) / 2)
+        # self.sampling_scaler = [(start + i * self.input_pertub) for i in range(0, self.num_timesteps)]
+        self.sampling_scaler = [self.input_pertub for i in range(0, self.num_timesteps)]
+        logger.log(f"eps mean is: {np.array(self.sampling_scaler).mean()}")
 
     def q_mean_variance(self, x_start, t):
         """
@@ -331,9 +336,11 @@ class GaussianDiffusion:
 
     def _predict_xstart_from_eps(self, x_t, t, eps):
         assert x_t.shape == eps.shape
+        ind = t[0].cpu().numpy()
+        logger.log(f"using sampling scaler: {self.sampling_scaler[ind]}")
         return (
             _extract_into_tensor(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t
-            - _extract_into_tensor(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape) * eps
+            - _extract_into_tensor(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape) * (eps/self.sampling_scaler[ind])
         )
 
     def _predict_xstart_from_xprev(self, x_t, t, xprev):
@@ -453,6 +460,9 @@ class GaussianDiffusion:
         model_kwargs=None,
         device=None,
         progress=False,
+        x_T=None,
+        forward_t=None,
+        x_0=None,
     ):
         """
         Generate samples from the model.
@@ -484,6 +494,9 @@ class GaussianDiffusion:
             model_kwargs=model_kwargs,
             device=device,
             progress=progress,
+            x_T=x_T,
+            forward_t=forward_t,
+            x_0=x_0,
         ):
             final = sample
         return final["sample"]
@@ -499,6 +512,9 @@ class GaussianDiffusion:
         model_kwargs=None,
         device=None,
         progress=False,
+        x_T = None,
+        forward_t=None,
+        x_0=None,
     ):
         """
         Generate samples from the model and yield intermediate samples from
@@ -514,8 +530,11 @@ class GaussianDiffusion:
         if noise is not None:
             img = noise
         else:
-            img = th.randn(*shape, device=device)
-        indices = list(range(self.num_timesteps))[::-1]
+            # img = th.randn(*shape, device=device)
+            img = x_T
+            logger.log(f"ddpm: starting from x_{forward_t}")
+
+        indices = list(range(forward_t+1))[::-1]
 
         if progress:
             # Lazy import so that we don't depend on tqdm.
@@ -535,6 +554,20 @@ class GaussianDiffusion:
                     cond_fn=cond_fn,
                     model_kwargs=model_kwargs,
                 )
+
+                # save intermediate prediction x_299, x_199, x_99...
+                if i > 0:
+                    sqrt_alpha_bar_x0 = _extract_into_tensor(self.sqrt_alphas_cumprod, t - 1, x_0.shape) * x_0
+                    sqrt_one_minus_alpha_bar = _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t - 1,
+                                                                    x_0.shape)
+                    stochas_part = out["sample"] - sqrt_alpha_bar_x0
+                    stochas_part = stochas_part.contiguous().cpu().numpy()
+                    if str(i-1) in self.x_t_stochas_part.keys():
+                        self.x_t_stochas_part[str(i-1)] = np.concatenate((self.x_t_stochas_part[str(i-1)], stochas_part), axis=0)
+                    else:
+                        self.x_t_stochas_part[str(i-1)] = stochas_part
+                    logger.log(f"store pred x_{i-1} stochas part with shape: {stochas_part.shape}")
+
                 yield out
                 img = out["sample"]
 
@@ -638,6 +671,8 @@ class GaussianDiffusion:
         device=None,
         progress=False,
         eta=0.0,
+        x_T=None,
+        forward_t=None,
     ):
         """
         Generate samples from the model using DDIM.
@@ -656,6 +691,8 @@ class GaussianDiffusion:
             device=device,
             progress=progress,
             eta=eta,
+            x_T=x_T,
+            forward_t=forward_t,
         ):
             final = sample
         return final["sample"]
@@ -672,6 +709,8 @@ class GaussianDiffusion:
         device=None,
         progress=False,
         eta=0.0,
+        x_T=None,
+        forward_t=None,
     ):
         """
         Use DDIM to sample from the model and yield intermediate samples from
@@ -685,8 +724,10 @@ class GaussianDiffusion:
         if noise is not None:
             img = noise
         else:
-            img = th.randn(*shape, device=device)
-        indices = list(range(self.num_timesteps))[::-1]
+            # img = th.randn(*shape, device=device)
+            img = x_T
+            logger.log(f"ddim: starting from x_{forward_t}")
+        indices = list(range(forward_t))[::-1]
 
         if progress:
             # Lazy import so that we don't depend on tqdm.

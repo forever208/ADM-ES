@@ -19,6 +19,8 @@ from guided_diffusion.script_util import (
     args_to_dict,
 )
 
+from guided_diffusion.image_datasets import load_data
+
 
 def main():
     args = create_argparser().parse_args()
@@ -41,10 +43,28 @@ def main():
         model.convert_to_fp16()
     model.eval()
 
+    logger.log(f"creating data loader from {args.data_dir}...")
+    data = load_data(
+        data_dir=args.data_dir,
+        batch_size=args.batch_size,
+        image_size=args.image_size,
+        class_cond=args.class_cond,
+    )
+
     logger.log("sampling...")
     all_images = []
+    # all_x_0 = []
     all_labels = []
     while len(all_images) * args.batch_size < args.num_samples:
+
+        # call forward diffusion to get x_T based on x_0
+        x_0, _ = next(data)
+        x_0 = x_0.to(dist_util.dev())
+        ones = th.ones(x_0.shape[0]).long().to(dist_util.dev())
+        t = ones * args.forward_t
+        epsilon = th.randn_like(x_0)
+        x_T = diffusion.q_sample(x_0, t, epsilon)
+
         model_kwargs = {}
         if args.class_cond:
             classes = th.randint(
@@ -59,14 +79,26 @@ def main():
             (args.batch_size, 3, args.image_size, args.image_size),
             clip_denoised=args.clip_denoised,
             model_kwargs=model_kwargs,
+            x_T=x_T,
+            forward_t=args.forward_t,
+            x_0=x_0,
         )
         sample = ((sample + 1) * 127.5).clamp(0, 255).to(th.uint8)
         sample = sample.permute(0, 2, 3, 1)
         sample = sample.contiguous()
+        # x_0 = ((x_0 + 1) * 127.5).clamp(0, 255).to(th.uint8)
+        # x_0 = x_0.permute(0, 2, 3, 1)
+        # x_0 = x_0.contiguous().cpu().numpy()
 
         gathered_samples = [th.zeros_like(sample) for _ in range(dist.get_world_size())]
         dist.all_gather(gathered_samples, sample)  # gather not supported with NCCL
         all_images.extend([sample.cpu().numpy() for sample in gathered_samples])
+
+        # if isinstance(all_x_0, list):
+        #     all_x_0 = x_0
+        # else:
+        #     all_x_0 = np.concatenate((all_x_0, x_0), axis=0)
+
         if args.class_cond:
             gathered_labels = [
                 th.zeros_like(classes) for _ in range(dist.get_world_size())
@@ -77,17 +109,53 @@ def main():
 
     arr = np.concatenate(all_images, axis=0)
     arr = arr[: args.num_samples]
+    # x_0_arr = all_x_0[: args.num_samples]
+
     if args.class_cond:
         label_arr = np.concatenate(all_labels, axis=0)
         label_arr = label_arr[: args.num_samples]
     if dist.get_rank() == 0:
-        shape_str = "x".join([str(x) for x in arr.shape])
-        out_path = os.path.join(logger.get_dir(), f"samples_{shape_str}.npz")
-        logger.log(f"saving to {out_path}")
-        if args.class_cond:
-            np.savez(out_path, arr, label_arr)
-        else:
-            np.savez(out_path, arr)
+        # compute x_t dist variance error
+        timesteps = []
+        gt_std = []
+        pred_std = []
+        std_diff = []
+
+        logger.log(f"array keys:{diffusion.x_t_stochas_part.keys()}")
+        for t, array in diffusion.x_t_stochas_part.items():
+            t = int(t)
+            # noise schedule of x_t
+            ground_truth_std = np.load('/home/mning/guided-diffusion/exposure_bias/sqrt_one_minus_alphas_cumprod_20steps.npz')['arr_0']
+            logger.log(f"gt x_{t} std:{ground_truth_std[t]}")
+
+            means = []
+            stds = []
+            data = diffusion.x_t_stochas_part[str(t)]
+
+            # compute the mean and std for each timestep t among 50k predictions
+            for c in range(data.shape[1]):
+                for h in range(data.shape[2]):
+                    for w in range(data.shape[3]):
+                        pixel_data = data[:, c, h, w]
+                        mean = np.mean(pixel_data)
+                        std = np.std(pixel_data)
+                        means.append(mean)
+                        stds.append(std)
+            pred_x_t_std = sum(stds) / len(stds)
+            logger.log(f"pred x_{t} std:{pred_x_t_std}, mean:{sum(means) / len(means)}")
+
+            if int(t + 1) not in timesteps:
+                timesteps.append(int(t + 1))
+                gt_std.append(ground_truth_std[t])
+                pred_std.append(pred_x_t_std)
+                std_diff.append(pred_x_t_std - ground_truth_std[t])
+                logger.log(f"timestep {t} added into plot")
+                logger.log(f"")
+
+        logger.log(f"timesteps: {timesteps}")
+        logger.log(f"ground truth std: {gt_std}")
+        logger.log(f"pred std: {pred_std}")
+        logger.log(f"std diff: {std_diff}")
 
     dist.barrier()
     logger.log("sampling complete")
@@ -100,6 +168,8 @@ def create_argparser():
         batch_size=16,
         use_ddim=False,
         model_path="",
+        data_dir="",
+        forward_t=19,
     )
     defaults.update(model_and_diffusion_defaults())
     parser = argparse.ArgumentParser()

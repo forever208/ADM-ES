@@ -171,6 +171,7 @@ class GaussianDiffusion:
         )
         self.input_pertub = input_pertub
         logger.log(f"input perturbation is: {self.input_pertub}")
+        self.x_t_stochas_part = {}
 
     def q_mean_variance(self, x_start, t):
         """
@@ -455,6 +456,7 @@ class GaussianDiffusion:
         progress=False,
         x_T=None,
         forward_t=None,
+        x_0=None,
     ):
         """
         Generate samples from the model.
@@ -488,6 +490,7 @@ class GaussianDiffusion:
             progress=progress,
             x_T=x_T,
             forward_t=forward_t,
+            x_0=x_0,
         ):
             final = sample
         return final["sample"]
@@ -505,6 +508,7 @@ class GaussianDiffusion:
         progress=False,
         x_T = None,
         forward_t=None,
+        x_0=None,
     ):
         """
         Generate samples from the model and yield intermediate samples from
@@ -544,6 +548,20 @@ class GaussianDiffusion:
                     cond_fn=cond_fn,
                     model_kwargs=model_kwargs,
                 )
+
+                # save intermediate prediction x_299, x_199, x_99...
+                if i % 50 == 0 and i > 0:
+                    sqrt_alpha_bar_x0 = _extract_into_tensor(self.sqrt_alphas_cumprod, t - 1, x_0.shape) * x_0
+                    sqrt_one_minus_alpha_bar = _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t - 1,
+                                                                    x_0.shape)
+                    stochas_part = out["sample"] - sqrt_alpha_bar_x0
+                    stochas_part=stochas_part.contiguous().cpu().numpy()
+                    if str(i-1) in self.x_t_stochas_part.keys():
+                        self.x_t_stochas_part[str(i-1)] = np.concatenate((self.x_t_stochas_part[str(i-1)], stochas_part), axis=0)
+                    else:
+                        self.x_t_stochas_part[str(i-1)] = stochas_part
+                    logger.log(f"store pred x_{i-1} stochas part with shape: {stochas_part.shape}")
+
                 yield out
                 img = out["sample"]
 

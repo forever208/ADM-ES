@@ -53,7 +53,7 @@ def main():
 
     logger.log("sampling...")
     all_images = []
-    all_x_0 = []
+    # all_x_0 = []
     all_labels = []
     while len(all_images) * args.batch_size < args.num_samples:
 
@@ -81,22 +81,23 @@ def main():
             model_kwargs=model_kwargs,
             x_T=x_T,
             forward_t=args.forward_t,
+            x_0=x_0,
         )
         sample = ((sample + 1) * 127.5).clamp(0, 255).to(th.uint8)
         sample = sample.permute(0, 2, 3, 1)
         sample = sample.contiguous()
-        x_0 = ((x_0 + 1) * 127.5).clamp(0, 255).to(th.uint8)
-        x_0 = x_0.permute(0, 2, 3, 1)
-        x_0 = x_0.contiguous().cpu().numpy()
+        # x_0 = ((x_0 + 1) * 127.5).clamp(0, 255).to(th.uint8)
+        # x_0 = x_0.permute(0, 2, 3, 1)
+        # x_0 = x_0.contiguous().cpu().numpy()
 
         gathered_samples = [th.zeros_like(sample) for _ in range(dist.get_world_size())]
         dist.all_gather(gathered_samples, sample)  # gather not supported with NCCL
         all_images.extend([sample.cpu().numpy() for sample in gathered_samples])
 
-        if isinstance(all_x_0, list):
-            all_x_0 = x_0
-        else:
-            all_x_0 = np.concatenate((all_x_0, x_0), axis=0)
+        # if isinstance(all_x_0, list):
+        #     all_x_0 = x_0
+        # else:
+        #     all_x_0 = np.concatenate((all_x_0, x_0), axis=0)
 
         if args.class_cond:
             gathered_labels = [
@@ -108,7 +109,7 @@ def main():
 
     arr = np.concatenate(all_images, axis=0)
     arr = arr[: args.num_samples]
-    x_0_arr = all_x_0[: args.num_samples]
+    # x_0_arr = all_x_0[: args.num_samples]
 
     if args.class_cond:
         label_arr = np.concatenate(all_labels, axis=0)
@@ -123,9 +124,14 @@ def main():
             np.savez(out_path, arr)
 
         # save x_0
-        out_path = os.path.join(logger.get_dir(), f"x_0_{shape_str}.npz")
-        np.savez(out_path, x_0_arr)
-        logger.log(f"x_0 saving to {out_path}")
+        # out_path = os.path.join(logger.get_dir(), f"x_0_{shape_str}.npz")
+        # np.savez(out_path, x_0_arr)
+        # logger.log(f"x_0 saving to {out_path}")
+
+        # save x_t_stochas_part
+        out_path = os.path.join(logger.get_dir(), f"x_t_stochas_part.npz")
+        np.savez(out_path, **diffusion.x_t_stochas_part)
+        logger.log(f"x_t_stochas_part saving to {out_path}")
 
     dist.barrier()
     logger.log("sampling complete")

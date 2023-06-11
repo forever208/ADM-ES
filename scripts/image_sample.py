@@ -37,7 +37,6 @@ def main():
         dist_util.load_state_dict(model_path, map_location="cpu")
     )
     logger.log(f"loading checkpoint: {model_path}")
-    logger.log(f"timesteps: {args.timestep_respacing}")
     model.to(dist_util.dev())
     if args.use_fp16:
         model.convert_to_fp16()
@@ -51,90 +50,73 @@ def main():
         class_cond=args.class_cond,
     )
 
-    logger.log("sampling...")
-    all_images = []
-    # all_x_0 = []
     all_labels = []
-    while len(all_images) * args.batch_size < args.num_samples:
+    x_t_stochas_part = {}
 
-        # call forward diffusion to get x_T based on x_0
-        x_0, _ = next(data)
-        x_0 = x_0.to(dist_util.dev())
-        ones = th.ones(x_0.shape[0]).long().to(dist_util.dev())
-        t = ones * args.forward_t
-        epsilon = th.randn_like(x_0)
-        x_T = diffusion.q_sample(x_0, t, epsilon)
+    for timestep in range(550, 1000, 50):
+        num_iteration = 0
+        logger.log(f" ")
+        logger.log(f"computing pred_x_t distribution for timestep {timestep}...")
 
-        model_kwargs = {}
-        if args.class_cond:
-            classes = th.randint(
-                low=0, high=NUM_CLASSES, size=(args.batch_size,), device=dist_util.dev()
-            )
-            model_kwargs["y"] = classes
-        sample_fn = (
-            diffusion.p_sample_loop if not args.use_ddim else diffusion.ddim_sample_loop
-        )
-        sample = sample_fn(
-            model,
-            (args.batch_size, 3, args.image_size, args.image_size),
-            clip_denoised=args.clip_denoised,
-            model_kwargs=model_kwargs,
-            x_T=x_T,
-            forward_t=args.forward_t,
-            x_0=x_0,
-        )
-        sample = ((sample + 1) * 127.5).clamp(0, 255).to(th.uint8)
-        sample = sample.permute(0, 2, 3, 1)
-        sample = sample.contiguous()
-        # x_0 = ((x_0 + 1) * 127.5).clamp(0, 255).to(th.uint8)
-        # x_0 = x_0.permute(0, 2, 3, 1)
-        # x_0 = x_0.contiguous().cpu().numpy()
+        with th.no_grad():
+            while num_iteration * args.batch_size < args.num_samples:
+                num_iteration += 1
 
-        gathered_samples = [th.zeros_like(sample) for _ in range(dist.get_world_size())]
-        dist.all_gather(gathered_samples, sample)  # gather not supported with NCCL
-        all_images.extend([sample.cpu().numpy() for sample in gathered_samples])
+                # call forward diffusion to get x_T based on x_0
+                x_0, _ = next(data)
+                x_0 = x_0.to(dist_util.dev())
+                ones = th.ones(x_0.shape[0]).long().to(dist_util.dev())
+                t = ones * timestep
+                epsilon = th.randn_like(x_0)
+                x_t = diffusion.q_sample(x_0, t, epsilon)
 
-        # if isinstance(all_x_0, list):
-        #     all_x_0 = x_0
-        # else:
-        #     all_x_0 = np.concatenate((all_x_0, x_0), axis=0)
+                model_kwargs = {}
+                if args.class_cond:
+                    classes = th.randint(
+                        low=0, high=NUM_CLASSES, size=(args.batch_size,), device=dist_util.dev()
+                    )
+                    model_kwargs["y"] = classes
+                sample_fn = (
+                    diffusion.p_sample if not args.use_ddim else diffusion.ddim_sample
+                )
 
-        if args.class_cond:
-            gathered_labels = [
-                th.zeros_like(classes) for _ in range(dist.get_world_size())
-            ]
-            dist.all_gather(gathered_labels, classes)
-            all_labels.extend([labels.cpu().numpy() for labels in gathered_labels])
-        logger.log(f"created {len(all_images) * args.batch_size} samples")
+                out = sample_fn(
+                    model,
+                    x_t,
+                    t,
+                    clip_denoised=args.clip_denoised,
+                    model_kwargs=model_kwargs,
+                    x_0=x_0,
+                )
+                x_t_prev = out["sample"]
+                sqrt_alpha_bar_x0 = out["sqrt_alpha_bar_x0"]
+                stochas_part = x_t_prev - sqrt_alpha_bar_x0  # x_t_prev: (sqrt_one_minus_alpha_bar) * N(0, I)
+                stochas_part = stochas_part.contiguous().cpu().numpy()
 
-    arr = np.concatenate(all_images, axis=0)
-    arr = arr[: args.num_samples]
-    # x_0_arr = all_x_0[: args.num_samples]
+                if str(timestep-1) in x_t_stochas_part.keys():
+                    x_t_stochas_part[str(timestep-1)] = np.concatenate((x_t_stochas_part[str(timestep-1)], stochas_part),
+                                                                       axis=0)
+                else:
+                    x_t_stochas_part[str(timestep-1)] = stochas_part
+                logger.log(f"x_t_stochas_part for {timestep-1} with shape: {x_t_stochas_part[str(timestep-1)].shape}")
+
+                if args.class_cond:
+                    gathered_labels = [
+                        th.zeros_like(classes) for _ in range(dist.get_world_size())
+                    ]
+                    dist.all_gather(gathered_labels, classes)
+                    all_labels.extend([labels.cpu().numpy() for labels in gathered_labels])
 
     if args.class_cond:
         label_arr = np.concatenate(all_labels, axis=0)
         label_arr = label_arr[: args.num_samples]
     if dist.get_rank() == 0:
-        shape_str = "x".join([str(x) for x in arr.shape])
-        out_path = os.path.join(logger.get_dir(), f"samples_{shape_str}.npz")
-        logger.log(f"samples saving to {out_path}")
-        if args.class_cond:
-            np.savez(out_path, arr, label_arr)
-        else:
-            np.savez(out_path, arr)
-
-        # save x_0
-        # out_path = os.path.join(logger.get_dir(), f"x_0_{shape_str}.npz")
-        # np.savez(out_path, x_0_arr)
-        # logger.log(f"x_0 saving to {out_path}")
-
-        # save x_t_stochas_part
         out_path = os.path.join(logger.get_dir(), f"x_t_stochas_part.npz")
-        np.savez(out_path, **diffusion.x_t_stochas_part)
+        np.savez(out_path, **x_t_stochas_part)
         logger.log(f"x_t_stochas_part saving to {out_path}")
 
     dist.barrier()
-    logger.log("sampling complete")
+    logger.log("computing complete")
 
 
 def create_argparser():

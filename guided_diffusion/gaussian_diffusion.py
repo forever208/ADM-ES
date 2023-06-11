@@ -406,6 +406,7 @@ class GaussianDiffusion:
         denoised_fn=None,
         cond_fn=None,
         model_kwargs=None,
+        x_0=None,
     ):
         """
         Sample x_{t-1} from the model at the given timestep.
@@ -441,7 +442,8 @@ class GaussianDiffusion:
                 cond_fn, out, x, t, model_kwargs=model_kwargs
             )
         sample = out["mean"] + nonzero_mask * th.exp(0.5 * out["log_variance"]) * noise
-        return {"sample": sample, "pred_xstart": out["pred_xstart"]}
+        sqrt_alpha_bar_x0 = _extract_into_tensor(self.sqrt_alphas_cumprod, t - 1, x_0.shape) * x_0
+        return {"sample": sample, "pred_xstart": out["pred_xstart"], "sqrt_alpha_bar_x0": sqrt_alpha_bar_x0}
 
     def p_sample_loop(
         self,
@@ -552,8 +554,6 @@ class GaussianDiffusion:
                 # save intermediate prediction x_299, x_199, x_99...
                 if i % 50 == 0 and i > 0:
                     sqrt_alpha_bar_x0 = _extract_into_tensor(self.sqrt_alphas_cumprod, t - 1, x_0.shape) * x_0
-                    sqrt_one_minus_alpha_bar = _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t - 1,
-                                                                    x_0.shape)
                     stochas_part = out["sample"] - sqrt_alpha_bar_x0
                     stochas_part=stochas_part.contiguous().cpu().numpy()
                     if str(i-1) in self.x_t_stochas_part.keys():

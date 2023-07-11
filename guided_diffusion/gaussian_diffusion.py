@@ -170,7 +170,13 @@ class GaussianDiffusion:
             / (1.0 - self.alphas_cumprod)
         )
         self.input_pertub = input_pertub
-        logger.log(f"input perturbation is: {self.input_pertub}")
+        self.pred_eps = {}
+
+        logger.log(f"eps scaler stride is: {self.input_pertub}")
+        start = 1.011 - self.input_pertub * ((self.num_timesteps - 1) / 2)
+        # self.sampling_scaler = [(start + i * self.input_pertub) for i in range(0, self.num_timesteps)]
+        self.sampling_scaler = [self.input_pertub for i in range(0, self.num_timesteps)]
+        logger.log(f"eps mean is: {np.array(self.sampling_scaler).mean()}")
 
     def q_mean_variance(self, x_start, t):
         """
@@ -327,13 +333,17 @@ class GaussianDiffusion:
             "variance": model_variance,
             "log_variance": model_log_variance,
             "pred_xstart": pred_xstart,
+            "pred_eps": model_output,
         }
 
     def _predict_xstart_from_eps(self, x_t, t, eps):
         assert x_t.shape == eps.shape
+        ind = t[0].cpu().numpy()
+        logger.log(f"using sampling scaler: {self.sampling_scaler[ind]}")
+
         return (
             _extract_into_tensor(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t
-            - _extract_into_tensor(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape) * eps
+            - _extract_into_tensor(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape) * (eps / self.sampling_scaler[ind])
         )
 
     def _predict_xstart_from_xprev(self, x_t, t, xprev):
@@ -440,7 +450,7 @@ class GaussianDiffusion:
                 cond_fn, out, x, t, model_kwargs=model_kwargs
             )
         sample = out["mean"] + nonzero_mask * th.exp(0.5 * out["log_variance"]) * noise
-        return {"sample": sample, "pred_xstart": out["pred_xstart"]}
+        return {"sample": sample, "pred_xstart": out["pred_xstart"], "pred_eps": out["pred_eps"] }
 
     def p_sample_loop(
         self,
@@ -535,6 +545,27 @@ class GaussianDiffusion:
                     cond_fn=cond_fn,
                     model_kwargs=model_kwargs,
                 )
+
+                # save intermediate prediction
+                pred_eps = out["pred_eps"]
+                pred_eps = pred_eps.contiguous().cpu().numpy()
+
+                # compute the l2-norm for each image
+                l2_norms = []
+                for n in range(pred_eps.shape[0]):
+                    image = pred_eps[n, :, :, :]
+                    image = image.reshape(3, -1)
+                    l2_norm = np.linalg.norm(image, 'fro')
+                    l2_norms.append(l2_norm)
+                eps_l2_norm = (sum(l2_norms) / len(l2_norms)) / self.input_pertub
+                eps_l2_norm = np.array(eps_l2_norm).reshape([1])
+
+                if str(i) in self.pred_eps.keys():
+                    self.pred_eps[str(i)] = np.concatenate((self.pred_eps[str(i)], eps_l2_norm), axis=0)
+                else:
+                    self.pred_eps[str(i)] = eps_l2_norm
+                logger.log(f"store pred_eps: {eps_l2_norm} at {str(i)}, defore division: {eps_l2_norm*self.input_pertub}")
+
                 yield out
                 img = out["sample"]
 

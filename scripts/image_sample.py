@@ -81,13 +81,24 @@ def main():
         label_arr = np.concatenate(all_labels, axis=0)
         label_arr = label_arr[: args.num_samples]
     if dist.get_rank() == 0:
-        shape_str = "x".join([str(x) for x in arr.shape])
-        out_path = os.path.join(logger.get_dir(), f"samples_{shape_str}.npz")
-        logger.log(f"saving to {out_path}")
-        if args.class_cond:
-            np.savez(out_path, arr, label_arr)
-        else:
-            np.savez(out_path, arr)
+        # shape_str = "x".join([str(x) for x in arr.shape])
+        # out_path = os.path.join(logger.get_dir(), f"samples_{shape_str}.npz")
+        # logger.log(f"saving to {out_path}")
+        # # if args.class_cond:
+        # #     np.savez(out_path, arr, label_arr)
+        # # else:
+        # #     np.savez(out_path, arr)
+
+        # save x_0_error
+        out_path = os.path.join(logger.get_dir(), f"pred_eps.npz")
+        np.savez(out_path, **diffusion.pred_eps)
+        logger.log(f"pred_eps saving to {out_path}")
+
+        l2_norms_ls = []
+        for t in diffusion.pred_eps:
+            l2_norms_ls.append(diffusion.pred_eps[t].mean())
+            logger.log(f"avg eps l2 norm at {t} step: {diffusion.pred_eps[t].mean()}")
+        logger.log(f"eps l2 norm: {np.array(l2_norms_ls[::-1])}")
 
     dist.barrier()
     logger.log("sampling complete")

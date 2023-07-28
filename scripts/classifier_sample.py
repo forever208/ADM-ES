@@ -36,6 +36,9 @@ def main():
     model.load_state_dict(
         dist_util.load_state_dict(args.model_path, map_location="cpu")
     )
+    model_path = args.model_path
+    logger.log(f"loading checkpoint: {model_path}")
+    logger.log(f"timesteps: {args.timestep_respacing}")
     model.to(dist_util.dev())
     if args.use_fp16:
         model.convert_to_fp16()

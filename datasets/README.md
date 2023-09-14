@@ -3,7 +3,7 @@
 
 ## CIFAR-10
 
-For CIFAR-10, we created a script [cifar10.py](cifar10.py)` that creates `cifar_train` and `cifar_test` directories. These directories contain files named like `truck_49997.png`, so that the class name is discernable to the data loader.
+For CIFAR-10, we created a script [cifar10.py](cifar10.py) that creates `cifar_train` and `cifar_test` directories. These directories contain files named like `truck_49997.png`, so that the class name is discernable to the data loader.
 
 The `cifar_train` and `cifar_test` directories can be passed directly to the training scripts via the `--data_dir` argument.
 

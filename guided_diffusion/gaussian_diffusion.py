@@ -124,7 +124,7 @@ class GaussianDiffusion:
         model_var_type,
         loss_type,
         rescale_timesteps=False,
-        eps_scaler=0.0
+        eps_scaler=1.0
     ):
         self.model_mean_type = model_mean_type
         self.model_var_type = model_var_type
@@ -169,16 +169,9 @@ class GaussianDiffusion:
             * np.sqrt(alphas)
             / (1.0 - self.alphas_cumprod)
         )
-        self.eps_scaler = eps_scaler
-        logger.log(f"eps scaler stride is: {self.eps_scaler}")
 
-        # linear schedule
-        # start = 1.011 - self.eps_scaler * ((self.num_timesteps - 1) / 2)
-        # self.sampling_scaler = [(start + i * self.eps_scaler) for i in range(0, self.num_timesteps)]
-
-        # uniform schedule
-        self.sampling_scaler = [self.eps_scaler for i in range(0, self.num_timesteps)]
-
+        # uniform eps scaling schedule
+        self.sampling_scaler = [eps_scaler for i in range(0, self.num_timesteps)]
         logger.log(f"eps mean is: {np.array(self.sampling_scaler).mean()}")
 
     def q_mean_variance(self, x_start, t):
@@ -773,7 +766,7 @@ class GaussianDiffusion:
             model_kwargs = {}
         if noise is None:
             noise = th.randn_like(x_start)
-        new_noise = noise + self.eps_scaler * th.randn_like(noise)
+        new_noise = noise  # could add Input Perturbation (IP) for training: new_noise=noise+0.1*th.randn_like(noise)
         x_t = self.q_sample(x_start, t, noise=new_noise)
 
         terms = {}

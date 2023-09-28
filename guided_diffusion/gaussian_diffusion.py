@@ -124,7 +124,7 @@ class GaussianDiffusion:
         model_var_type,
         loss_type,
         rescale_timesteps=False,
-        input_pertub=0.0
+        eps_scaler=0.0
     ):
         self.model_mean_type = model_mean_type
         self.model_var_type = model_var_type
@@ -169,12 +169,12 @@ class GaussianDiffusion:
             * np.sqrt(alphas)
             / (1.0 - self.alphas_cumprod)
         )
-        self.input_pertub = input_pertub
-        logger.log(f"input perturbation is: {self.input_pertub}")
+        self.eps_scaler = eps_scaler
+        logger.log(f"eps scaler is: {self.eps_scaler}")
         self.x_t_stochas_part = {}
-        start = 1.011 - self.input_pertub * ((self.num_timesteps - 1) / 2)
-        # self.sampling_scaler = [(start + i * self.input_pertub) for i in range(0, self.num_timesteps)]
-        self.sampling_scaler = [self.input_pertub for i in range(0, self.num_timesteps)]
+        # start = 1.011 - self.eps_scaler * ((self.num_timesteps - 1) / 2)
+        # self.sampling_scaler = [(start + i * self.eps_scaler) for i in range(0, self.num_timesteps)]
+        self.sampling_scaler = [self.eps_scaler for i in range(0, self.num_timesteps)]
         logger.log(f"eps mean is: {np.array(self.sampling_scaler).mean()}")
 
     def q_mean_variance(self, x_start, t):
@@ -803,7 +803,7 @@ class GaussianDiffusion:
             model_kwargs = {}
         if noise is None:
             noise = th.randn_like(x_start)
-        new_noise = noise + self.input_pertub * th.randn_like(noise)
+        new_noise = noise + self.eps_scaler * th.randn_like(noise)
         x_t = self.q_sample(x_start, t, noise=new_noise)
 
         terms = {}

@@ -86,18 +86,10 @@ def main():
         sample = ((sample + 1) * 127.5).clamp(0, 255).to(th.uint8)
         sample = sample.permute(0, 2, 3, 1)
         sample = sample.contiguous()
-        # x_0 = ((x_0 + 1) * 127.5).clamp(0, 255).to(th.uint8)
-        # x_0 = x_0.permute(0, 2, 3, 1)
-        # x_0 = x_0.contiguous().cpu().numpy()
 
         gathered_samples = [th.zeros_like(sample) for _ in range(dist.get_world_size())]
         dist.all_gather(gathered_samples, sample)  # gather not supported with NCCL
         all_images.extend([sample.cpu().numpy() for sample in gathered_samples])
-
-        # if isinstance(all_x_0, list):
-        #     all_x_0 = x_0
-        # else:
-        #     all_x_0 = np.concatenate((all_x_0, x_0), axis=0)
 
         if args.class_cond:
             gathered_labels = [
@@ -109,23 +101,30 @@ def main():
 
     arr = np.concatenate(all_images, axis=0)
     arr = arr[: args.num_samples]
-    # x_0_arr = all_x_0[: args.num_samples]
-
     if args.class_cond:
         label_arr = np.concatenate(all_labels, axis=0)
         label_arr = label_arr[: args.num_samples]
+    if dist.get_rank() == 0:
+        shape_str = "x".join([str(x) for x in arr.shape])
+        out_path = os.path.join(logger.get_dir(), f"samples_{shape_str}.npz")
+        logger.log(f"saving to {out_path}")
+        if args.class_cond:
+            np.savez(out_path, arr, label_arr)
+        else:
+            np.savez(out_path, arr)
+
     if dist.get_rank() == 0:
         # compute x_t dist variance error
         timesteps = []
         gt_std = []
         pred_std = []
-        std_diff = []
+        delta_t = []
 
         logger.log(f"array keys:{diffusion.x_t_stochas_part.keys()}")
         for t, array in diffusion.x_t_stochas_part.items():
             t = int(t)
             # noise schedule of x_t
-            ground_truth_std = np.load('/home/mning/guided-diffusion/exposure_bias/sqrt_one_minus_alphas_cumprod_20steps.npz')['arr_0']
+            ground_truth_std = diffusion.sqrt_one_minus_alphas_cumprod
             logger.log(f"gt x_{t} std:{ground_truth_std[t]}")
 
             means = []
@@ -148,14 +147,14 @@ def main():
                 timesteps.append(int(t + 1))
                 gt_std.append(ground_truth_std[t])
                 pred_std.append(pred_x_t_std)
-                std_diff.append(pred_x_t_std - ground_truth_std[t])
+                delta_t.append((pred_x_t_std - ground_truth_std[t])**2)
                 logger.log(f"timestep {t} added into plot")
                 logger.log(f"")
 
         logger.log(f"timesteps: {timesteps}")
         logger.log(f"ground truth std: {gt_std}")
         logger.log(f"pred std: {pred_std}")
-        logger.log(f"std diff: {std_diff}")
+        logger.log(f"delta_t: {delta_t}")
 
     dist.barrier()
     logger.log("sampling complete")

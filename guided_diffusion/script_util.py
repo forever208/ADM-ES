@@ -60,7 +60,7 @@ def model_and_diffusion_defaults():
         resblock_updown=False,
         use_fp16=False,
         use_new_attention_order=False,
-        input_pertub=0.0,
+        eps_scaler=0.0,
     )
     res.update(diffusion_defaults())
     return res
@@ -96,7 +96,7 @@ def create_model_and_diffusion(
     resblock_updown,
     use_fp16,
     use_new_attention_order,
-    input_pertub,
+    eps_scaler,
 ):
     model = create_model(
         image_size,
@@ -125,7 +125,7 @@ def create_model_and_diffusion(
         rescale_timesteps=rescale_timesteps,
         rescale_learned_sigmas=rescale_learned_sigmas,
         timestep_respacing=timestep_respacing,
-        input_pertub = input_pertub
+        eps_scaler = eps_scaler
     )
     return model, diffusion
 
@@ -403,7 +403,7 @@ def create_gaussian_diffusion(
     rescale_timesteps=False,
     rescale_learned_sigmas=False,
     timestep_respacing="",
-    input_pertub=0.0
+    eps_scaler=0.0
 ):
     betas = gd.get_named_beta_schedule(noise_schedule, steps)
     if use_kl:
@@ -431,7 +431,7 @@ def create_gaussian_diffusion(
         ),
         loss_type=loss_type,
         rescale_timesteps=rescale_timesteps,
-        input_pertub=input_pertub,
+        eps_scaler=eps_scaler,
     )
 
 

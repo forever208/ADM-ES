@@ -29,22 +29,21 @@ def load_data(*, data_dir, batch_size, image_size, class_cond=False,
     if not data_dir:
         raise ValueError("unspecified data directory")
 
-    # all_files = _list_image_files_recursively(data_dir)  # 1D list, all image "path + filename"
+    all_files = _list_image_files_recursively(data_dir)  # 1D list, all image "path + filename"
     # all_files = data_dir
 
     classes = None
-    # if class_cond:
-    #     # Assume classes are the first part of the filename, before _.
-    #     class_names = [bf.basename(path).split("_")[0] for path in all_files]
-    #     sorted_classes = {x: i for i, x in enumerate(sorted(set(class_names)))}
-    #     classes = [sorted_classes[x] for x in class_names]
+    if class_cond:
+        # Assume classes are the first part of the filename, before _.
+        class_names = [bf.basename(path).split("_")[0] for path in all_files]
+        sorted_classes = {x: i for i, x in enumerate(sorted(set(class_names)))}
+        classes = [sorted_classes[x] for x in class_names]
 
     # partition the whole dataset into each sub-dataset based on the num_of_GPUs
-    dataset = ImageDataset(image_size, data_dir, classes=classes, shard=MPI.COMM_WORLD.Get_rank(),
+    dataset = ImageDataset(image_size, all_files, classes=classes, shard=MPI.COMM_WORLD.Get_rank(),
                            num_shards=MPI.COMM_WORLD.Get_size(), random_crop=random_crop, random_flip=random_flip)
-
     if deterministic:
-        loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=8, drop_last=True, pin_memory=True)
+        loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=8, drop_last=True,pin_memory=True)
     else:
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=8, drop_last=True, pin_memory=True)
     while True:
@@ -67,22 +66,25 @@ class ImageDataset(Dataset):
     def __init__(self, resolution, image_paths, classes=None, shard=0, num_shards=1, random_crop=False, random_flip=True):
         super().__init__()
         self.resolution = resolution
-        self.local_images = np.load(image_paths)['arr_0'][shard:][::num_shards]
-        # self.local_images = image_paths[shard:][::num_shards]
+        self.local_images = image_paths[shard:][::num_shards]
         self.local_classes = None if classes is None else classes[shard:][::num_shards]
         self.random_crop = random_crop
         self.random_flip = random_flip
 
     def __len__(self):
-        return self.local_images.shape[0]
+        return len(self.local_images)
 
     def __getitem__(self, idx):
-        arr = self.local_images[idx]
+        path = self.local_images[idx]
+        with bf.BlobFile(path, "rb") as f:
+            pil_image = Image.open(f)
+            pil_image.load()
+        pil_image = pil_image.convert("RGB")
 
-        # if self.random_crop:
-        #     arr = random_crop_arr(image, self.resolution)
-        # else:
-        #     arr = center_crop_arr(image, self.resolution)
+        if self.random_crop:
+            arr = random_crop_arr(pil_image, self.resolution)
+        else:
+            arr = center_crop_arr(pil_image, self.resolution)
 
         if self.random_flip and random.random() < 0.5:
             arr = arr[:, ::-1]

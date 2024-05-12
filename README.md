@@ -5,7 +5,7 @@ This is the codebase for our paper **Elucidating the Exposure Bias in Diffusion 
 
 
 The repository is heavily based on [openai/guided-diffusion](https://github.com/openai/guided-diffusion) with the sampling solution **Epsion Scaling** (ADM-ES) 
-<br>Feel free to check out our Epsilon Scaling repository for EDM: [EDM-ES](https://github.com/forever208/EDM-ES) 
+<br>Feel free to check out our Epsilon Scaling repository for EDM: [EDM-ES](https://github.com/forever208/EDM-ES) and for LDM: [LDM-ES](https://github.com/forever208/LDM-ES)
 
 ## Installation
 The installation is the same with [guided-diffusion](https://github.com/openai/guided-diffusion)

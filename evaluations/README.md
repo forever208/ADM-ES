@@ -8,9 +8,13 @@ Install the dependencies by `pip install -r requirements.txt`
 you might encounter the bug: Could not load dynamic library 'libcudart.so.11.0 etc.
 <br>Instead of using `pip install -r requirements.txt`, try the installation by:
 ```
+$ conda create -n FID python==3.8  # (3.9 does not support tf 2.4)
+$ conda activate FID
 $ pip install tensorflow==2.4
 $ conda install cudatoolkit=11.0
-$ conda install -c conda-forge cudnn
+$ conda install -c conda-forge cudnn==8.2.1.32
+$ pip install scipy==1.10.1
+$ pip install tqdm==4.65.0
 ```
 
 (refer to [libcudart.so.11.0](https://github.com/tensorflow/tensorflow/issues/45930) and [libcudart.so.8](https://github.com/tensorflow/tensorflow/issues/45200) for details)

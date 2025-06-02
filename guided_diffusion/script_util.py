@@ -60,7 +60,7 @@ def model_and_diffusion_defaults():
         resblock_updown=False,
         use_fp16=False,
         use_new_attention_order=False,
-        eps_scaler=0.0,
+        eps_scaler=1.0,
     )
     res.update(diffusion_defaults())
     return res
@@ -403,7 +403,7 @@ def create_gaussian_diffusion(
     rescale_timesteps=False,
     rescale_learned_sigmas=False,
     timestep_respacing="",
-    eps_scaler=0.0
+    eps_scaler=1.0
 ):
     betas = gd.get_named_beta_schedule(noise_schedule, steps)
     if use_kl:

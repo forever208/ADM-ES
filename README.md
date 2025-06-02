@@ -10,8 +10,8 @@ The repository is heavily based on [openai/guided-diffusion](https://github.com/
 ## Installation
 The installation is the same with [guided-diffusion](https://github.com/openai/guided-diffusion)
 ```
-git clone https://github.com/forever208/DDPM-IP.git
-cd DDPM-IP
+git clone https://github.com/forever208/ADM-ES.git
+cd ADM-ES
 conda create -n ADM python=3.8
 conda activate ADM
 pip install -e .
